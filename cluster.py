@@ -4,7 +4,7 @@ import shutil
 import numpy as np
 from pathlib import Path
 from typing import List, Dict, Set
-from sklearn.cluster import DBSCAN
+import hdbscan
 from insightface.app import FaceAnalysis
 
 IMG_EXTS = {'.jpg', '.jpeg', '.png', '.bmp', '.tif', '.tiff', '.webp'}
@@ -35,13 +35,13 @@ def build_plan_live(
     input_dir: Path,
     det_size=(640, 640),
     min_score: float = 0.5,
-    dbscan_eps: float = 0.5,
-    dbscan_min_samples: int = 2,
+    min_cluster_size: int = 2,
     providers: List[str] = ("CPUExecutionProvider",),
     progress_callback=None,
 ):
     input_dir = Path(input_dir)
-    all_images = [p for p in input_dir.rglob("*") if is_image(p)]
+    all_images = [p for p in input_dir.rglob("*")
+                  if is_image(p) and "общие" not in str(p).lower()]
 
     app = FaceAnalysis(name="buffalo_l", providers=list(providers))
     ctx_id = -1 if "cpu" in str(providers).lower() else 0
@@ -96,10 +96,9 @@ def build_plan_live(
         }
 
     X = np.vstack(embeddings)
-    model = DBSCAN(eps=dbscan_eps, min_samples=dbscan_min_samples, metric="cosine")
+    model = hdbscan.HDBSCAN(min_cluster_size=min_cluster_size, metric="cosine")
     raw_labels = model.fit_predict(X)
 
-    # 🔧 ИСПРАВЛЕНО: set(...) - {...} перед sorted
     label_map = {label: idx for idx, label in enumerate(sorted(set(raw_labels) - {-1}))}
 
     cluster_map: Dict[int, Set[Path]] = {}
@@ -143,15 +142,16 @@ def distribute_to_folders(plan: dict, base_dir: Path):
 
     for item in plan.get("plan", []):
         src = Path(item["path"])
+        if "общие" in str(src).lower():
+            continue
+
         clusters = [cluster_id_map[c] for c in item["cluster"]]
-        faces = item.get("faces", 0)
         if not src.exists():
             continue
 
         if len(clusters) == 1:
             cluster_id = clusters[0]
-            subdir = "individual" if faces == 1 else "group"
-            dst = base_dir / f"cluster_{cluster_id:02d}" / subdir / src.name
+            dst = base_dir / f"cluster_{cluster_id:02d}" / src.name
             dst.parent.mkdir(parents=True, exist_ok=True)
             try:
                 shutil.move(str(src), str(dst))
@@ -161,7 +161,7 @@ def distribute_to_folders(plan: dict, base_dir: Path):
                 print(f"❌ Ошибка перемещения {src} → {dst}: {e}")
         else:
             for cluster_id in clusters:
-                dst = base_dir / f"cluster_{cluster_id:02d}" / "group" / src.name
+                dst = base_dir / f"cluster_{cluster_id:02d}" / src.name
                 dst.parent.mkdir(parents=True, exist_ok=True)
                 try:
                     shutil.copy2(str(src), str(dst))

@@ -159,7 +159,7 @@ def distribute_to_folders(plan: dict, base_dir: Path):
 
         if len(clusters) == 1:
             cluster_id = clusters[0]
-            dst = base_dir / f"cluster_{cluster_id:02d}" / src.name
+            dst = base_dir / str(cluster_id + 1) / src.name
             dst.parent.mkdir(parents=True, exist_ok=True)
             try:
                 shutil.move(str(src), str(dst))
@@ -169,7 +169,7 @@ def distribute_to_folders(plan: dict, base_dir: Path):
                 print(f"❌ Ошибка перемещения {src} → {dst}: {e}")
         else:
             for cluster_id in clusters:
-                dst = base_dir / f"cluster_{cluster_id:02d}" / src.name
+                dst = base_dir / str(cluster_id + 1) / src.name
                 dst.parent.mkdir(parents=True, exist_ok=True)
                 try:
                     shutil.copy2(str(src), str(dst))

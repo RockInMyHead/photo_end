@@ -1,9 +1,10 @@
 import streamlit as st
 import json
+import zipfile
 from pathlib import Path
 from PIL import Image
 import psutil
-from cluster import build_plan_live, distribute_to_folders, IMG_EXTS
+from cluster import build_plan_live, distribute_to_folders, process_group_folder, IMG_EXTS
 
 st.set_page_config("Кластеризация лиц", layout="wide")
 st.title("📸 Кластеризация лиц и распределение по группам")
@@ -28,6 +29,35 @@ def get_special_dirs():
 
 def show_folder_contents(current_path: Path):
     st.markdown(f"📁 **Текущая папка:** `{current_path}`")
+
+    # 📂 Drag and drop uploader
+    uploaded_files = st.file_uploader(
+        "📥 Перетащите изображения или ZIP-архивы в текущую папку",
+        accept_multiple_files=True,
+        type=["jpg", "jpeg", "png", "zip"]
+    )
+
+    if uploaded_files:
+        for uploaded_file in uploaded_files:
+            target_dir = current_path
+
+            if uploaded_file.name.endswith(".zip"):
+                try:
+                    with zipfile.ZipFile(uploaded_file) as archive:
+                        archive.extractall(target_dir)
+                        st.success(f"📦 Распаковано: {uploaded_file.name}")
+                except Exception as e:
+                    st.error(f"❌ Ошибка распаковки {uploaded_file.name}: {e}")
+            else:
+                file_path = target_dir / uploaded_file.name
+                try:
+                    with open(file_path, "wb") as f:
+                        f.write(uploaded_file.read())
+                    st.success(f"✅ Сохранено: {uploaded_file.name}")
+                except Exception as e:
+                    st.error(f"❌ Ошибка сохранения {uploaded_file.name}: {e}")
+
+        st.rerun()
 
     if st.button("📌 Добавить в очередь", key=f"queue_{current_path}"):
         if str(current_path) not in st.session_state["queue"]:
@@ -62,7 +92,7 @@ def show_folder_contents(current_path: Path):
                 st.session_state["current_path"] = str(folder)
                 st.rerun()
     except PermissionError:
-        st.error(f"⛔ Нет доступа к содержимому: `{current_path}`")
+        st.error(f"⛔️ Нет доступа к содержимому: `{current_path}`")
     except Exception as e:
         st.error(f"❌ Ошибка при обходе `{current_path}`: {e}")
 
@@ -75,12 +105,12 @@ if "current_path" not in st.session_state:
     else:
         st.session_state["current_path"] = str(Path.home())
 
-st.subheader("🧭 Переход по дискам и системным папкам")
+st.subheader("🧱 Переход по дискам и системным папкам")
 
 cols = st.columns(4)
 for i, drive in enumerate(get_logical_drives()):
     with cols[i % 4]:
-        if st.button(f"💽 {drive}", key=f"drive_{drive}"):
+        if st.button(f"📍 {drive}", key=f"drive_{drive}"):
             st.session_state["current_path"] = str(drive)
             st.rerun()
 
@@ -94,15 +124,13 @@ st.markdown("<div class='folder-scroll-box'>", unsafe_allow_html=True)
 show_folder_contents(Path(st.session_state["current_path"]))
 st.markdown("</div>", unsafe_allow_html=True)
 
-# Очередь
 if st.session_state["queue"]:
     st.subheader("📋 Очередь на обработку:")
     for i, folder in enumerate(st.session_state["queue"]):
         st.text(f"{i+1}. {folder}")
-    if st.button("🧹 Очистить очередь"):
+    if st.button("🧹 Удалить очередь"):
         st.session_state["queue"] = []
 
-# Обработка
 if st.session_state["queue"] and st.button("🚀 Обработать всю очередь"):
     for folder in st.session_state["queue"]:
         path = Path(folder)
@@ -113,22 +141,22 @@ if st.session_state["queue"] and st.button("🚀 Обработать всю о�
 
         progress_placeholder = st.empty()
 
-        with st.spinner("🧠 Кластеризация..."):
-            plan = build_plan_live(path, progress_callback=progress_placeholder)
+        if any(p.is_dir() and "общие" not in str(p).lower() for p in path.iterdir()):
+            process_group_folder(path)
+            st.success("🌟 Группа обработана")
+        else:
+            with st.spinner("🧠 Кластеризация..."):
+                plan = build_plan_live(path, progress_callback=progress_placeholder)
+                moved, copied, _ = distribute_to_folders(plan, path)
 
-        with open(f"plan_{path.name}.json", "w", encoding="utf-8") as f:
-            json.dump(plan, f, ensure_ascii=False, indent=2)
+            st.success(f"✅ Готово. Перемещено: {moved}, Скопировано: {copied}")
 
-        moved, copied = distribute_to_folders(plan, path)
+            if plan.get("unreadable"):
+                st.warning(f"💼 Нечитаемых файлов: {len(plan['unreadable'])}")
+                st.code("\n".join(plan["unreadable"][:30]))
 
-        st.success(f"✅ Готово. Перемещено: {moved}, Скопировано: {copied}")
-
-        if plan.get("unreadable"):
-            st.warning(f"📛 Нечитаемых файлов: {len(plan['unreadable'])}")
-            st.code("\\n".join(plan["unreadable"][:30]))
-
-        if plan.get("no_faces"):
-            st.warning(f"🙈 Без лиц: {len(plan['no_faces'])}")
-            st.code("\\n".join(plan["no_faces"][:30]))
+            if plan.get("no_faces"):
+                st.warning(f"🙈 Без лиц: {len(plan['no_faces'])}")
+                st.code("\n".join(plan["no_faces"][:30]))
 
     st.session_state["queue"] = []

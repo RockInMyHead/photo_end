@@ -168,6 +168,10 @@ def distribute_to_folders(plan: dict, base_dir: Path, cluster_start: int = 1) ->
                     copied += 1
                 except Exception as e:
                     print(f"❌ Ошибка копирования {src} → {dst}: {e}")
+            try:
+                src.unlink()  # удаляем оригинал после копирования в несколько папок
+            except Exception as e:
+                print(f"❌ Ошибка удаления {src}: {e}")
 
     for p in sorted(moved_paths, key=lambda x: len(str(x)), reverse=True):
         try:
@@ -191,5 +195,6 @@ def process_group_folder(group_dir: Path):
         plan = build_plan_live(subfolder)
         print(f"📊 Кластеров: {len(plan.get('clusters', {}))}, файлов: {len(plan.get('plan', []))}")
         moved, copied, cluster_counter = distribute_to_folders(plan, subfolder, cluster_start=cluster_counter)
+
 
 

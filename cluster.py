@@ -141,12 +141,13 @@ def build_plan_live(
     }
 
 
-def distribute_to_folders(plan: dict, base_dir: Path):
+def distribute_to_folders(plan: dict, base_dir: Path, cluster_start: int = 1):
     moved, copied = 0, 0
     moved_paths = set()
 
     used_clusters = sorted({c for item in plan.get("plan", []) for c in item["cluster"]})
-    cluster_id_map = {old: idx for idx, old in enumerate(used_clusters)}
+    cluster_id_map = {old: idx + cluster_start - 1 for idx, old in enumerate(used_clusters)}
+    max_cluster_id = cluster_start - 1
 
     for item in plan.get("plan", []):
         src = Path(item["path"])
@@ -159,7 +160,7 @@ def distribute_to_folders(plan: dict, base_dir: Path):
 
         if len(clusters) == 1:
             cluster_id = clusters[0]
-            dst = base_dir / str(cluster_id + 1) / src.name
+            dst = base_dir / str(cluster_id) / src.name
             dst.parent.mkdir(parents=True, exist_ok=True)
             try:
                 shutil.move(str(src), str(dst))
@@ -169,13 +170,15 @@ def distribute_to_folders(plan: dict, base_dir: Path):
                 print(f"❌ Ошибка перемещения {src} → {dst}: {e}")
         else:
             for cluster_id in clusters:
-                dst = base_dir / str(cluster_id + 1) / src.name
+                dst = base_dir / str(cluster_id) / src.name
                 dst.parent.mkdir(parents=True, exist_ok=True)
                 try:
                     shutil.copy2(str(src), str(dst))
                     copied += 1
                 except Exception as e:
                     print(f"❌ Ошибка копирования {src} → {dst}: {e}")
+
+        max_cluster_id = max(max_cluster_id, max(clusters, default=max_cluster_id))
 
     for p in sorted(moved_paths, key=lambda x: len(str(x)), reverse=True):
         try:
@@ -184,4 +187,14 @@ def distribute_to_folders(plan: dict, base_dir: Path):
         except Exception:
             pass
 
-    return moved, copied
+    return moved, copied, max_cluster_id + 1  # next cluster id
+
+
+def process_group_folder(group_path: Path, cluster_counter: int = 1):
+    group_path = Path(group_path)
+    subfolders = [p for p in group_path.iterdir() if p.is_dir() and "общие" not in str(p).lower()]
+    for folder in sorted(subfolders, key=lambda p: p.name.lower()):
+        print(f"\n📂 Обработка папки: {folder}")
+        plan = build_plan_live(folder)
+        moved, copied, cluster_counter = distribute_to_folders(plan, folder, cluster_start=cluster_counter)
+        print(f"✅ Готово: перемещено {moved}, скопировано {copied}, следующий кластер: {cluster_counter}")

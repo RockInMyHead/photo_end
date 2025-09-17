@@ -185,4 +185,3 @@ def distribute_to_folders(plan: dict, base_dir: Path):
             pass
 
     return moved, copied
-

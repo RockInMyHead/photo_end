@@ -192,3 +192,4 @@ def process_group_folder(group_dir: Path):
         print(f"📊 Кластеров: {len(plan.get('clusters', {}))}, файлов: {len(plan.get('plan', []))}")
         moved, copied, cluster_counter = distribute_to_folders(plan, subfolder, cluster_start=cluster_counter)
 
+

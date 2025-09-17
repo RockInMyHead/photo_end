@@ -5,6 +5,7 @@ import numpy as np
 from pathlib import Path
 from typing import List, Dict, Set
 import hdbscan
+from sklearn.metrics.pairwise import cosine_distances
 from insightface.app import FaceAnalysis
 
 IMG_EXTS = {'.jpg', '.jpeg', '.png', '.bmp', '.tif', '.tiff', '.webp'}
@@ -40,8 +41,10 @@ def build_plan_live(
     progress_callback=None,
 ):
     input_dir = Path(input_dir)
-    all_images = [p for p in input_dir.rglob("*")
-                  if is_image(p) and "общие" not in str(p).lower()]
+    all_images = [
+        p for p in input_dir.rglob("*")
+        if is_image(p) and "общие" not in str(p).lower()
+    ]
 
     app = FaceAnalysis(name="buffalo_l", providers=list(providers))
     ctx_id = -1 if "cpu" in str(providers).lower() else 0
@@ -96,12 +99,13 @@ def build_plan_live(
         }
 
     X = np.vstack(embeddings)
+    distance_matrix = cosine_distances(X)
+
     model = hdbscan.HDBSCAN(
         min_cluster_size=min_cluster_size,
-        metric="cosine",
-        algorithm="brute"
+        metric='precomputed'
     )
-    raw_labels = model.fit_predict(X)
+    raw_labels = model.fit_predict(distance_matrix)
 
     label_map = {label: idx for idx, label in enumerate(sorted(set(raw_labels) - {-1}))}
 

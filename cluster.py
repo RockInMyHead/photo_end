@@ -96,7 +96,11 @@ def build_plan_live(
         }
 
     X = np.vstack(embeddings)
-    model = hdbscan.HDBSCAN(min_cluster_size=min_cluster_size, metric="cosine")
+    model = hdbscan.HDBSCAN(
+        min_cluster_size=min_cluster_size,
+        metric="cosine",
+        algorithm="brute"
+    )
     raw_labels = model.fit_predict(X)
 
     label_map = {label: idx for idx, label in enumerate(sorted(set(raw_labels) - {-1}))}

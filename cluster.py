@@ -99,7 +99,7 @@ def build_plan_live(
         }
 
     X = np.vstack(embeddings)
-    distance_matrix = cosine_distances(X)
+    distance_matrix = cosine_distances(X).astype(np.float64)
 
     model = hdbscan.HDBSCAN(
         min_cluster_size=min_cluster_size,
@@ -185,3 +185,4 @@ def distribute_to_folders(plan: dict, base_dir: Path):
             pass
 
     return moved, copied
+
